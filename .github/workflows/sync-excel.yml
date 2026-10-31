@@ -1,29 +1,61 @@
 name: Sync Excel from OneDrive
+
 on:
   schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
-permissions:
-  contents: write
+    - cron: '*/15 * * * *'   # tu dong moi 15 phut
+  workflow_dispatch: {}       # nut "Run workflow" de chay tay
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Tai file Excel tu OneDrive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cai trinh duyet ao (Playwright)
+        run: |
+          npm init -y --silent
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Tai file Excel bang trinh duyet ao
         env:
-          URL: ${{ secrets.EXCEL_DOWNLOAD_URL }}
+          EXCEL_URL: ${{ secrets.EXCEL_DOWNLOAD_URL }}
         run: |
-          if [ -z "$URL" ]; then echo "::error::Chua tao Secret EXCEL_DOWNLOAD_URL"; exit 1; fi
-          if [[ "$URL" == *"?"* ]]; then DL="$URL&download=1"; else DL="$URL?download=1"; fi
-          curl -L --fail -sS -o new.xlsx "$DL"
-          if [ "$(head -c 2 new.xlsx)" != "PK" ]; then
-            echo "::error::File tai ve KHONG phai Excel (co the link doi dang nhap)"; exit 1
+          if [ -z "$EXCEL_URL" ]; then echo "::error::Chua tao Secret EXCEL_DOWNLOAD_URL"; exit 1; fi
+          node -e "
+          const { chromium } = require('playwright');
+          (async () => {
+            let url = process.env.EXCEL_URL.trim();
+            if (!/[?&]download=1/.test(url)) url += (url.includes('?') ? '&' : '?') + 'download=1';
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
+            await page.goto(url, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+            const download = await downloadPromise;
+            await download.saveAs('data.xlsx.new');
+            await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          "
+          if [ "$(head -c 2 data.xlsx.new)" != "PK" ]; then
+            echo "::error::File tai ve KHONG phai Excel"; exit 1
           fi
-          mv new.xlsx data.xlsx
-      - name: Luu vao repo neu co thay doi
+
+      - name: So sanh va luu neu co thay doi
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
-          git add data.xlsx
-          git diff --cached --quiet && echo "Khong co thay doi" || (git commit -m "Cap nhat data.xlsx" && git push)
+          if [ ! -f data.xlsx ] || ! cmp -s data.xlsx.new data.xlsx; then
+            mv data.xlsx.new data.xlsx
+            git config user.name "github-actions[bot]"
+            git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+            git add data.xlsx
+            git commit -m "Dong bo du lieu Excel tu OneDrive"
+            git push
+          else
+            echo "Khong co thay doi, bo qua."
+            rm -f data.xlsx.new
+          fi
