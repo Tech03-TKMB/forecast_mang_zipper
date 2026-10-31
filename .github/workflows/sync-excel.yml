@@ -1,0 +1,29 @@
+name: Sync Excel from OneDrive
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tai file Excel tu OneDrive
+        env:
+          URL: ${{ secrets.EXCEL_DOWNLOAD_URL }}
+        run: |
+          if [ -z "$URL" ]; then echo "::error::Chua tao Secret EXCEL_DOWNLOAD_URL"; exit 1; fi
+          if [[ "$URL" == *"?"* ]]; then DL="$URL&download=1"; else DL="$URL?download=1"; fi
+          curl -L --fail -sS -o new.xlsx "$DL"
+          if [ "$(head -c 2 new.xlsx)" != "PK" ]; then
+            echo "::error::File tai ve KHONG phai Excel (co the link doi dang nhap)"; exit 1
+          fi
+          mv new.xlsx data.xlsx
+      - name: Luu vao repo neu co thay doi
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git add data.xlsx
+          git diff --cached --quiet && echo "Khong co thay doi" || (git commit -m "Cap nhat data.xlsx" && git push)
