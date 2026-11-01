@@ -249,6 +249,13 @@ function xlVal(v){
   if (typeof v === 'string'){ v = v.trim(); if (v === '') v = null; }
   return v === undefined ? null : v;
 }
+// ExcelJS bỏ mất kết quả công thức bằng 0 ở cell.value (vẫn còn trong cell.model) -> lấy lại từ model.
+function xlCell(cell){
+  const v = cell.value;
+  if (v && typeof v === 'object' && ('formula' in v || 'sharedFormula' in v) && !('result' in v) && cell.model && 'result' in cell.model)
+    return xlVal(cell.model.result);
+  return xlVal(v);
+}
 // Số kiểu Việt Nam: "2,5" -> 2.5; "1.234,5" -> 1234.5; "N/A" -> null.
 function xlNum(v){
   if (typeof v === 'number') return isFinite(v) ? v : null;
@@ -294,7 +301,7 @@ function xlTable(wb, name, cols){
   const rows = [];
   ws.eachRow((row, r) => {
     if (r === 1) return;
-    const a = cols.map((_, i) => xlVal(row.getCell(i+1).value));
+    const a = cols.map((_, i) => xlCell(row.getCell(i+1)));
     if (a.some(x => x !== null)) rows.push({ r, a });
   });
   return rows;
@@ -333,9 +340,9 @@ function xlParseWorkbook(wb){
     const out = {}; layers.forEach(L => out[L] = {});
     ws.eachRow((row, r) => {
       if (r === 1) return;
-      const order = xlStr(xlVal(row.getCell(1).value));
+      const order = xlStr(xlCell(row.getCell(1)));
       if (!order) return;
-      layers.forEach((L, i) => { const n = xlNum(xlVal(row.getCell(i+2).value)); xlNeed(n !== null, r, `${L} không phải số`); out[L][order] = n; });
+      layers.forEach((L, i) => { const n = xlNum(xlCell(row.getCell(i+2))); xlNeed(n !== null, r, `${L} không phải số`); out[L][order] = n; });
     });
     return out;
   });
@@ -657,7 +664,8 @@ function computeKhoBanhThun(base, btp, bagCode){
 
 function findMachinesForWidth(widthMm){
   if (widthMm===null || widthMm===undefined || isNaN(widthMm)) return [];
-  return APP_DATA.banh_thun.filter(b => Number(b.width) === Number(widthMm));
+  // Chỉ tính bánh thun còn hàng: số lượng = 0 hoặc để trống coi như không có tại TMT.
+  return APP_DATA.banh_thun.filter(b => Number(b.width) === Number(widthMm) && num(b.qty) > 0);
 }
 
 function computeDinhLuong(mic, density){
