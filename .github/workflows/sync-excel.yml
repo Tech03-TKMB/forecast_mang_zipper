@@ -5,6 +5,11 @@ on:
     - cron: '*/15 * * * *'   # tu dong moi 15 phut
   workflow_dispatch: {}       # nut "Run workflow" de chay tay
 
+# Khong cho 2 luot chay cung luc: luot sau doi luot truoc xong
+concurrency:
+  group: sync-excel
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -48,14 +53,21 @@ jobs:
 
       - name: So sanh va luu neu co thay doi
         run: |
-          if [ ! -f data.xlsx ] || ! cmp -s data.xlsx.new data.xlsx; then
-            mv data.xlsx.new data.xlsx
-            git config user.name "github-actions[bot]"
-            git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3; do
+            # Lay ban moi nhat tren GitHub (vd vua upload index.html, hoac luot khac vua luu)
+            git fetch origin main
+            git reset --hard origin/main
+            if [ -f data.xlsx ] && cmp -s data.xlsx.new data.xlsx; then
+              echo "Khong co thay doi, bo qua."
+              exit 0
+            fi
+            cp data.xlsx.new data.xlsx
             git add data.xlsx
             git commit -m "Dong bo du lieu Excel tu OneDrive"
-            git push
-          else
-            echo "Khong co thay doi, bo qua."
-            rm -f data.xlsx.new
-          fi
+            if git push; then echo "Da luu data.xlsx moi."; exit 0; fi
+            echo "Repo vua thay doi, thu lai lan $i..."
+            sleep 5
+          done
+          echo "::error::Khong luu duoc sau 3 lan thu"; exit 1
