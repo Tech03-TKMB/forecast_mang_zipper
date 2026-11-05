@@ -1558,8 +1558,27 @@ function stepPillsHtml(labels, current){
     return `<div class="step-pill ${cls}">${n}. ${esc(l)}</div>`;
   }).join('') + '</div>';
 }
-function machineListHtml(machines){
-  if (!machines.length) return '<span class="badge badge-bad">Chưa có tại TMT</span>';
+// Bánh thun còn hàng có khổ gần nhất, không nhỏ hơn khổ bánh thun auto - mỗi máy (Sinomech, Comexi...) 1 khổ.
+function suggestBanhThun(widthAutoMm){
+  if (widthAutoMm===null || widthAutoMm===undefined || widthAutoMm==='' || isNaN(widthAutoMm)) return [];
+  const best = {};
+  APP_DATA.banh_thun.forEach(b => {
+    if (!b.machine || b.width===null || b.width===undefined || b.width==='') return;
+    const w = Number(b.width);
+    if (!isFinite(w) || w < Number(widthAutoMm) || !(num(b.qty) > 0)) return;
+    if (!best[b.machine] || w < Number(best[b.machine].width)) best[b.machine] = b;
+  });
+  return Object.values(best);
+}
+// widthAutoMm: khổ bánh thun auto - dùng để gợi ý khổ gần nhất khi khổ đang dùng chưa có tại TMT.
+function machineListHtml(machines, widthAutoMm){
+  if (!machines.length){
+    const sug = suggestBanhThun(widthAutoMm);
+    return '<span class="badge badge-bad">Chưa có tại TMT</span>' + (sug.length
+      ? `<div class="hint" style="margin-top:4px">Gợi ý gần nhất:</div>` +
+        sug.map(m=>`<span class="badge badge-ok">${esc(m.machine)} ${fmt(m.width,0)} (SL:${esc(m.qty)})</span>`).join(' ')
+      : '');
+  }
   return machines.map(m=>`<span class="badge badge-ok">${esc(m.machine)} (SL:${esc(m.qty)})</span>`).join(' ');
 }
 function spliceSelectHtml(id, value, onchangeCall){
@@ -2061,7 +2080,7 @@ function tuiStep4PTI(spec){
       <td class="num">${fmt(c.kbtAuto,2)}${c.tuiBe?' <span class="hint">(túi bế)</span>':''}</td>
       <td><input type="number" class="input-override" style="width:90px" value="${esc(c.kbtOverrideVal)}" placeholder="auto" onchange="tuiSetBanhThunOverride('${spec.id}','${c.key}',this.value)"></td>
       <td class="num"><b>${fmt(c.kbtFinal,2)}</b></td>
-      <td>${machineListHtml(c.machines)}</td>
+      <td>${machineListHtml(c.machines, c.kbtAuto)}</td>
     </tr>`;
   }).join('');
   return `<div style="overflow:auto"><table class="result"><thead><tr>
@@ -2551,7 +2570,7 @@ function cuonStep3PTI(spec){
     <td class="num">${fmt(r.kbtAuto,2)}</td>
     <td><input type="number" class="input-override" style="width:90px" placeholder="auto" value="${esc(spec.banhThunOverride)}" onchange="cuonSetField('${spec.id}','banhThunOverride',this.value)"></td>
     <td class="num"><b>${fmt(r.kbtFinal,2)}</b></td>
-    <td>${machineListHtml(r.machines)}</td>
+    <td>${machineListHtml(r.machines, r.kbtAuto)}</td>
     <td class="num"><b>${fmt(r.khoMang,2)}</b></td>
   </tr></tbody></table></div>`;
 }
